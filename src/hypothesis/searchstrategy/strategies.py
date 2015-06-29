@@ -25,7 +25,7 @@ from hypothesis.errors import BadData, NoExamples, WrongFormat, \
 from hypothesis.control import assume
 from hypothesis.settings import Settings
 from hypothesis.deprecation import note_deprecation
-from hypothesis.internal.compat import hrange, integer_types
+from hypothesis.internal.compat import hrange, text_type, integer_types
 from hypothesis.utils.extmethod import ExtMethod
 from hypothesis.internal.chooser import chooser
 from hypothesis.utils.conventions import not_set
@@ -76,6 +76,20 @@ def check_type(typ, value, e=WrongFormat):
         raise e('Value %r is not an instance of %s' % (
             value, name
         ))
+
+
+def check_basic(v):
+    if v is None or isinstance(v, text_type):
+        return
+    if isinstance(v, integer_types):
+        if (abs(v) >> 64):
+            raise BadData('Integer does not fit in 64 bits: %r' % (v,))
+        return
+    if isinstance(v, list):
+        for t in v:
+            check_basic(t)
+        return
+    raise BadData('Unexpected value %r of type %s' % (v, type(v).__name__))
 
 
 def check_data_type(typ, value):

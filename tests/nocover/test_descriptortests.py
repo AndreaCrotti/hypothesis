@@ -31,6 +31,7 @@ from hypothesis.strategies import just, none, sets, text, basic, lists, \
 from hypothesis.strategytests import mutate_basic, templates_for, \
     strategy_test_suite
 from hypothesis.internal.compat import hrange
+from hypothesis.searchstrategy.morpher import MorpherStrategy
 from hypothesis.searchstrategy.narytree import n_ary_tree
 
 try:
@@ -194,6 +195,11 @@ with Settings(average_list_length=5.0):
             generate=lambda r, p: r.getrandbits(128) & p,
         )
     )
+
+    TestMorphers = strategy_test_suite(MorpherStrategy())
+    TestMorphersWithBecome = strategy_test_suite(MorpherStrategy().map(
+        lambda x: (x.become(text()), x)[1]
+    ))
 
 
 TestStatemachine = strategy_test_suite(StateMachineSearchStrategy())
