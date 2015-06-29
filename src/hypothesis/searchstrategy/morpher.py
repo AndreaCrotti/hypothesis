@@ -36,6 +36,13 @@ def record_to_basic(record):
         return record.strategy.to_basic(record.template)
 
 
+def tupleize(x):
+    if isinstance(x, list):
+        return tuple(map(tupleize, x))
+    else:
+        return x
+
+
 class Morpher(object):
 
     def __init__(
@@ -49,6 +56,23 @@ class Morpher(object):
         self.template_seed = template_seed
         self.data = data
         self.active_strategy = active_strategy
+
+    def __hash__(self):
+        return hash(self.sig_tuple())
+
+    def __eq__(self, other):
+        return isinstance(other, Morpher) and (
+            self.sig_tuple() == other.sig_tuple()
+        )
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def sig_tuple(self):
+        return (
+            self.parameter_seed, self.template_seed,
+            tupleize(list(map(record_to_basic, self.data)))
+        )
 
     def become(self, strategy):
         return strategy.reify(self.template_for(strategy))
