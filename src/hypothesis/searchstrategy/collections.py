@@ -17,6 +17,7 @@
 from __future__ import division, print_function, absolute_import, \
     unicode_literals
 
+from copy import copy
 from random import Random
 from collections import namedtuple
 
@@ -332,7 +333,7 @@ class ListStrategy(SearchStrategy):
             for j in indices[:-1]:
                 result[j] = pivot
             yield tuple(result)
-            result[indices[-1]] = pivot
+            result[indices[-1]] = copy(pivot)
             yield tuple(result)
             for i in indices[:-2]:
                 result[i] = x[i]
