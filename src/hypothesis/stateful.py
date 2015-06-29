@@ -37,11 +37,13 @@ from hypothesis.errors import Flaky, NoSuchExample, InvalidDefinition, \
     UnsatisfiedAssumption
 from hypothesis.settings import Settings, Verbosity
 from hypothesis.reporting import report, verbose_report, current_verbosity
-from hypothesis.internal.compat import hrange, integer_types
+from hypothesis.strategies import lists
+from hypothesis.internal.compat import hrange
 from hypothesis.searchstrategy.misc import JustStrategy, \
     SampledFromStrategy
-from hypothesis.searchstrategy.strategies import BadData, SearchStrategy, \
-    strategy, check_length, check_data_type, one_of_strategies
+from hypothesis.searchstrategy.morpher import MorpherStrategy
+from hypothesis.searchstrategy.strategies import MappedSearchStrategy, \
+    strategy, one_of_strategies
 from hypothesis.searchstrategy.collections import TupleStrategy, \
     FixedKeysDictStrategy
 
@@ -117,7 +119,7 @@ def run_state_machine_as_test(state_machine_factory, settings=None):
 
     breaker.run(state_machine_factory(), print_steps=True)
     raise Flaky(
-        'Run failed initially by succeeded on a second try'
+        'Run failed initially but succeeded on a second try'
     )
 
 
@@ -221,81 +223,22 @@ class StateMachineRunner(object):
 
     """
 
-    def __init__(
-        self, parameter_seed, template_seed, n_steps,
-        record=None, templates=None,
-    ):
-        self.parameter_seed = parameter_seed
-        self.template_seed = template_seed
-        self.n_steps = n_steps
-        assert 0 <= n_steps <= 1000000
-
-        self.templates = templates or seeds(template_seed, n_steps)
-        assert len(self.templates) >= n_steps
-        self.record = list(record or ())
+    def __init__(self, morphers):
+        self.morphers = morphers
 
     def __trackas__(self):
-        return (
-            StateMachineRunner,
-            self.parameter_seed, self.template_seed,
-            self.n_steps,
-            [data[1] for data in self.record],
-        )
+        return self.morphers
 
     def __repr__(self):
-        return (
-            'StateMachineRunner(%d/%d steps)' % (
-                len([t for t in self.record if t != TOMBSTONE]),
-                self.n_steps,
-            )
-        )
+        return 'StateMachineRunner(%d steps)' % (len(self.morphers),)
 
     def run(self, state_machine, print_steps=None):
         if print_steps is None:
             print_steps = current_verbosity() >= Verbosity.debug
 
         try:
-            for i in hrange(self.n_steps):
-                strategy = state_machine.steps()
-
-                template_set = False
-                if i < len(self.record):
-                    if self.record[i] is TOMBSTONE:
-                        continue
-                    _, data = self.record[i]
-                    data = list(data)
-                    for data_index in hrange(len(data) - 1, -1, -1):
-                        try:
-                            template = strategy.from_basic(data[data_index])
-                            template_set = True
-                            break
-                        except BadData:
-                            pass
-                    if template_set:
-                        data[data_index], data[-1] = (
-                            data[-1], data[data_index]
-                        )
-                else:
-                    data = []
-                if not template_set:
-                    parameter = strategy.draw_parameter(Random(
-                        self.parameter_seed
-                    ))
-                    template = strategy.draw_template(
-                        Random(self.templates[i]), parameter)
-                    data.append(strategy.to_basic(template))
-
-                new_record = (
-                    strategy, data,
-                )
-                if i < len(self.record):
-                    self.record[i] = new_record
-                else:
-                    self.record.append(new_record)
-
-                strategy.from_basic(self.record[i][1][-1])
-                value = strategy.reify(template)
-
+            for morpher in self.morphers:
+                value = morpher.become(state_machine.steps())
                 if print_steps:
                     state_machine.print_step(value)
                 state_machine.execute_step(value)
@@ -303,186 +246,19 @@ class StateMachineRunner(object):
             state_machine.teardown()
 
 
-class StateMachineSearchStrategy(SearchStrategy):
+class StateMachineSearchStrategy(MappedSearchStrategy):
 
     def __init__(self, settings=None):
-        self.program_size = (settings or Settings.default).stateful_step_count
+        super(StateMachineSearchStrategy, self).__init__(
+            lists(
+                MorpherStrategy(),
+                max_size=(settings or Settings.default).stateful_step_count))
 
     def __repr__(self):
         return 'StateMachineSearchStrategy()'
 
-    def reify(self, template):
-        return template
-
-    def draw_parameter(self, random):
-        return (
-            random.getrandbits(64)
-        )
-
-    def draw_template(self, random, parameter_value):
-        parameter_seed = parameter_value
-        return StateMachineRunner(
-            parameter_seed,
-            random.getrandbits(64),
-            n_steps=self.program_size,
-        )
-
-    def to_basic(self, template):
-        return [
-            template.parameter_seed,
-            template.template_seed,
-            template.n_steps,
-            [
-                [data[1]]
-                if data != TOMBSTONE else None
-                for data in template.record
-            ]
-        ]
-
-    def from_basic(self, data):
-        check_data_type(list, data)
-        check_length(4, data)
-        check_data_type(integer_types, data[0])
-        check_data_type(integer_types, data[1])
-        check_data_type(integer_types, data[2])
-        check_data_type(list, data[3])
-
-        if data[2] < 0:
-            raise BadData('Invalid negative number of steps: %d' % (
-                data[2],
-            ))
-        if data[2] > Settings.default.stateful_step_count * 1000:
-            raise BadData('Implausibly large number of steps: %d' % (
-                data[2],
-            ))
-
-        record = []
-
-        for record_data in data[3]:
-            if record_data is None:
-                record.append(TOMBSTONE)
-            else:
-                check_data_type(list, record_data)
-                check_length(1, record_data)
-                record.append((None, record_data[0]))
-        return StateMachineRunner(
-            parameter_seed=data[0], template_seed=data[1],
-            n_steps=data[2],
-            record=record,
-        )
-
-    def simplifiers(self, random, template):
-        yield self.cut_steps
-        yield self.random_discards
-        yield self.delete_elements
-        for i in hrange(len(template.record)):
-            if template.record[i] != TOMBSTONE:
-                strategy, data = template.record[i]
-                if strategy is None:
-                    continue
-                child_template = strategy.from_basic(data[-1])
-                for simplifier in strategy.simplifiers(random, child_template):
-                    yield self.convert_simplifier(strategy, simplifier, i)
-
-    def convert_simplifier(self, strategy, simplifier, i):
-        def accept(random, template):
-            if i >= len(template.record):
-                return
-            if template.record[i][0] is not strategy:
-                return
-
-            reconstituted = strategy.from_basic(template.record[i][1][-1])
-
-            for t in simplifier(random, reconstituted):
-                new_record = list(template.record)
-                existing = new_record[i]
-                new_record[i] = (existing[0], list(existing[1]))
-                new_record[i][1][-1] = strategy.to_basic(t)
-                yield StateMachineRunner(
-                    parameter_seed=template.parameter_seed,
-                    template_seed=template.template_seed,
-                    templates=template.templates,
-                    n_steps=template.n_steps,
-                    record=new_record,
-                )
-        accept.__name__ = str('convert_simplifier(%s, %d)' % (
-            simplifier.__name__, i
-        ))
-        return accept
-
-    def random_discards(self, random, template):
-        live = len([
-            r for r in template.record if r != TOMBSTONE
-        ])
-        if live < 10:
-            return
-
-        for k in hrange(1, 8):
-            for _ in hrange(10):
-                new_record = list(template.record)
-                for i in hrange(len(template.record)):
-                    if new_record[i] != TOMBSTONE:
-                        if random.randint(0, 9) <= k:
-                            new_record[i] = TOMBSTONE
-                yield StateMachineRunner(
-                    parameter_seed=template.parameter_seed,
-                    template_seed=template.template_seed,
-                    templates=template.templates,
-                    n_steps=template.n_steps,
-                    record=new_record,
-                )
-
-    def cut_steps(self, random, template):
-        if len(template.record) < template.n_steps:
-            yield StateMachineRunner(
-                parameter_seed=template.parameter_seed,
-                template_seed=template.template_seed,
-                templates=template.templates,
-                n_steps=len(template.record),
-                record=template.record,
-            )
-        mid = 0
-        while True:
-            next_mid = (template.n_steps + mid) // 2
-            if next_mid == mid:
-                break
-            mid = next_mid
-            yield StateMachineRunner(
-                parameter_seed=template.parameter_seed,
-                template_seed=template.template_seed,
-                templates=template.templates,
-                n_steps=mid,
-                record=template.record,
-            )
-            new_record = list(template.record)
-            for i in hrange(min(mid, len(new_record))):
-                new_record[i] = TOMBSTONE
-            yield StateMachineRunner(
-                parameter_seed=template.parameter_seed,
-                template_seed=template.template_seed,
-                templates=template.templates,
-                n_steps=template.n_steps,
-                record=new_record,
-            )
-
-    def delete_elements(self, random, template):
-        deletes = 0
-        indices = list(hrange(len(template.record)))
-        random.shuffle(indices)
-        for i in indices:
-            if deletes >= 10:
-                break
-            if template.record[i] != TOMBSTONE:
-                deletes += 1
-                new_record = list(template.record)
-                new_record[i] = TOMBSTONE
-                yield StateMachineRunner(
-                    parameter_seed=template.parameter_seed,
-                    template_seed=template.template_seed,
-                    templates=template.templates,
-                    n_steps=template.n_steps,
-                    record=new_record,
-                )
+    def pack(self, morphers):
+        return StateMachineRunner(morphers)
 
 
 Rule = namedtuple(
