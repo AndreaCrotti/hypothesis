@@ -173,22 +173,6 @@ with_cheap_bad_machines = pytest.mark.parametrize(
 
 
 @with_cheap_bad_machines
-def test_can_serialize_statemachine_execution(machine):
-    runner = machine.find_breaking_runner()
-    strategy = StateMachineSearchStrategy()
-    new_runner = strategy.from_basic(strategy.to_basic(runner))
-    with pytest.raises(AssertionError):
-        new_runner.run(machine())
-    r = Random(1)
-
-    for simplifier in strategy.simplifiers(r, new_runner):
-        try:
-            next(simplifier(r, new_runner))
-        except StopIteration:
-            pass
-
-
-@with_cheap_bad_machines
 def test_can_shrink_deserialized_execution_without_running(machine):
     runner = machine.find_breaking_runner()
     strategy = StateMachineSearchStrategy()
@@ -400,22 +384,10 @@ def test_minimizes_errors_in_teardown():
             assert not self.counter
 
     runner = Foo.find_breaking_runner()
-    assert runner.n_steps == 1
+    assert len(runner.morphers) == 1
 
     with pytest.raises(AssertionError):
         runner.run(Foo(), print_steps=True)
-
-
-def test_can_produce_minimal_outcomes_from_unreliable_strategies():
-    runner = UnreliableStrategyState.find_breaking_runner()
-    n = UnreliableStrategyState.n
-
-    assert runner.n_steps == n
-    assert len(runner.record) >= n
-    for strat, data in runner.record[:n]:
-        template = strat.from_basic(data[-1])
-        value = strat.reify(template)
-        assert value in ([], 0)
 
 
 class RequiresInit(GenericStateMachine):
