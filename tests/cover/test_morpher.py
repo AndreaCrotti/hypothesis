@@ -49,3 +49,10 @@ def test_a_morpher_retains_its_data_on_reserializing():
     m = find(morphers, lambda x: sum(x.become(intlists)) > 1)
     m2 = morphers.from_basic(morphers.to_basic(m))
     assert m.become(intlists) == m2.become(intlists)
+
+
+def test_can_clone_morphers_into_inactive_morphers():
+    m = find(
+        s.lists(morphers), lambda x: len(x) >= 2 and x[0].become(s.booleans()))
+    assert len(m) == 2
+    assert m[1].active_strategy is not None

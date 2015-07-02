@@ -155,6 +155,27 @@ class MorpherStrategy(SearchStrategy):
         ):
             yield self.convert_simplifier(strategy, simplifier)
 
+    def strictly_simpler(self, x, y):
+        if x.active_strategy is None and y.active_strategy is None:
+            return x.template_seed < y.template_seed
+        if y.active_strategy is None:
+            return True
+        if x.active_strategy is None:
+            return False
+        xstrat = x.active_strategy
+        ystrat = y.active_strategy
+
+        # Note: Order matters. This leaves x and y with the same active
+        # strategies that they started with.
+        x_as_y = x.template_for(ystrat)
+        x_as_x = x.template_for(xstrat)
+        y_as_x = y.template_for(xstrat)
+        y_as_y = y.template_for(ystrat)
+        return (
+            xstrat.strictly_simpler(x_as_x, y_as_x) and
+            ystrat.strictly_simpler(x_as_y, y_as_y)
+        )
+
     def convert_simplifier(self, strategy, simplifier):
         def accept(random, template):
             converted = template.template_for(strategy)
