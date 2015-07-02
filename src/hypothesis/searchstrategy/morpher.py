@@ -20,6 +20,8 @@ from __future__ import division, print_function, absolute_import, \
 from copy import copy
 from random import Random
 from collections import namedtuple
+from hypothesis.internal.tracker import Tracker
+
 
 from hypothesis.internal.compat import hrange, integer_types
 from hypothesis.searchstrategy.strategies import BadData, SearchStrategy, \
@@ -48,14 +50,26 @@ class Morpher(object):
     def __init__(
         self,
         parameter_seed, template_seed,
-        data=None, active_strategy=None
+        data=None
     ):
         if data is None:
             data = []
         self.parameter_seed = parameter_seed
         self.template_seed = template_seed
         self.data = data
-        self.active_strategy = active_strategy
+        self.seen_reprs = set()
+
+    def collapse_data(self):
+        new_data = []
+        t = Tracker()
+        for record in self.data:
+            as_basic = record_to_basic(record)
+            if t.track(as_basic) == 1:
+                new_data.append(StoredAsBasic(as_basic))
+        self.data = new_data
+
+    def prune_unused(self):
+        self.data = [r for r in self.data if isinstance(r, StoredAsDeferred)]
 
     def __hash__(self):
         return hash(self.sig_tuple())
@@ -80,9 +94,8 @@ class Morpher(object):
     def __copy__(self):
         result = Morpher(
             self.parameter_seed, self.template_seed,
-            list(self.data), self.active_strategy
+            list(self.data),
         )
-        result.active_template = self.active_template
         return result
 
     def __trackas__(self):
@@ -96,26 +109,34 @@ class Morpher(object):
             self.parameter_seed, self.template_seed, self.data
         )
 
+    def strategies(self):
+        for record in self.data:
+            if isinstance(record, StoredAsDeferred):
+                yield record.strategy
+
     def template_for(self, strategy):
-        if strategy is self.active_strategy:
-            return self.active_template
-        self.active_strategy = strategy
         for i in hrange(len(self.data)):
-            try:
-                record = self.data[i]
+            record = self.data[i]
+            if (
+                isinstance(record, StoredAsDeferred) and
+                record.strategy is strategy
+            ):
                 del self.data[i]
-                self.active_template = strategy.from_basic(
-                    record_to_basic(record))
-                self.data.append(
-                    StoredAsDeferred(strategy, self.active_template))
-                return self.active_template
-            except BadData:
-                pass
+                self.data.append(record)
+                return record.template
+            elif isinstance(record, StoredAsBasic):
+                try:
+                    active_template = strategy.from_basic(record.basic)
+                    self.data.append(
+                        StoredAsDeferred(strategy, active_template))
+                    return active_template
+                except BadData:
+                    pass
         param = strategy.draw_parameter(Random(self.parameter_seed))
-        self.active_template = strategy.draw_template(
+        active_template = strategy.draw_template(
             Random(self.template_seed), param)
-        self.data.append(StoredAsDeferred(strategy, self.active_template))
-        return self.active_template
+        self.data.append(StoredAsDeferred(strategy, active_template))
+        return active_template
 
 
 class MorpherStrategy(SearchStrategy):
@@ -133,6 +154,7 @@ class MorpherStrategy(SearchStrategy):
         return template
 
     def to_basic(self, template):
+        template.collapse_data()
         return [
             template.parameter_seed, template.template_seed,
             list(map(record_to_basic, template.data))
@@ -147,34 +169,23 @@ class MorpherStrategy(SearchStrategy):
         return Morpher(data[0], data[1], list(map(StoredAsBasic, data[2])))
 
     def simplifiers(self, random, template):
-        if template.active_strategy is None:
-            return
-        strategy = template.active_strategy
-        for simplifier in strategy.simplifiers(
-            random, template.active_template
-        ):
-            yield self.convert_simplifier(strategy, simplifier)
+        for strategy in template.strategies():
+            for simplifier in strategy.simplifiers(
+                random, template.template_for(strategy)
+            ):
+                yield self.convert_simplifier(strategy, simplifier)
 
     def strictly_simpler(self, x, y):
-        if x.active_strategy is None and y.active_strategy is None:
+        strategies = list(x.strategies()) + list(y.strategies())
+        if not strategies:
             return x.template_seed < y.template_seed
-        if y.active_strategy is None:
-            return True
-        if x.active_strategy is None:
-            return False
-        xstrat = x.active_strategy
-        ystrat = y.active_strategy
 
-        # Note: Order matters. This leaves x and y with the same active
-        # strategies that they started with.
-        x_as_y = x.template_for(ystrat)
-        x_as_x = x.template_for(xstrat)
-        y_as_x = y.template_for(xstrat)
-        y_as_y = y.template_for(ystrat)
-        return (
-            xstrat.strictly_simpler(x_as_x, y_as_x) and
-            ystrat.strictly_simpler(x_as_y, y_as_y)
-        )
+        for strategy in strategies:
+            if not strategy.strictly_simpler(
+                x.template_for(strategy), y.template_for(strategy)
+            ):
+                return False
+        return True
 
     def convert_simplifier(self, strategy, simplifier):
         def accept(random, template):
@@ -182,10 +193,13 @@ class MorpherStrategy(SearchStrategy):
             for simpler in simplifier(random, converted):
                 new_template = copy(template)
                 new_template.data.pop()
+                new_template.prune_unused()
+                new_template.data.append(StoredAsBasic(
+                    strategy.to_basic(simpler)
+                ))
                 new_template.data.append(StoredAsDeferred(
                     strategy, simpler
                 ))
-                new_template.active_template = simpler
                 yield new_template
         accept.__name__ = str(
             'convert_simplifier(%r, %s)' % (strategy, simplifier.__name__))
