@@ -25,6 +25,18 @@ import hypothesis.strategies as st
 from hypothesis import find, given
 
 
+@pytest.mark.parametrize(('l', 'r'), [
+    # Exact values don't matter, but they're large enough so that x + y = inf.
+    (9.9792015476736e+291, 1.7976931348623157e+308),
+    (-sys.float_info.max, sys.float_info.max)
+])
+def test_floats_are_in_range(l, r):
+    @given(st.floats(l, r))
+    def test_is_in_range(t):
+        assert l <= t <= r
+    test_is_in_range()
+
+
 def test_can_generate_both_zeros():
     find(
         st.tuples(st.floats(), st.floats()), lambda x: x[0] == x[1] and (

@@ -190,7 +190,7 @@ def floats(min_value=None, max_value=None):
             )
         elif count_between_floats(min_value, max_value) > 1000:
             critical_values = [
-                min_value, max_value, (min_value + max_value) / 2]
+                min_value, max_value, min_value + (max_value - min_value) / 2]
             if min_value <= 0 <= max_value:
                 if not is_negative(max_value):
                     critical_values.append(0.0)
