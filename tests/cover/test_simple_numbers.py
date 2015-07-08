@@ -174,7 +174,7 @@ def test_out_of_range_integers_are_bad():
 
 def test_out_of_range_floats_are_bad():
     with pytest.raises(BadData):
-        floats(11, 12).from_basic(floats(0, 1).to_basic(0.0))
+        floats(11, 12).from_basic(floats(0, 1).to_basic((0, 0.0)))
 
 
 def test_float_simplicity():
