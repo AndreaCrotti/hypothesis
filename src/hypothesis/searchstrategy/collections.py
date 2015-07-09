@@ -521,12 +521,12 @@ class SetStrategy(SearchStrategy):
         return self.list_strategy.draw_parameter(random)
 
     def convert_template(self, template):
-        seen = Tracker()
+        seen = set()
         deduped = []
         for x in template:
-            if seen.track(x) > 1:
-                continue
-            deduped.append(x)
+            if x not in seen:
+                seen.add(x)
+                deduped.append(x)
             if self.max_size is not None:
                 if len(deduped) >= self.max_size:
                     break
