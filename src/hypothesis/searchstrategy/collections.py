@@ -25,6 +25,7 @@ from hypothesis.settings import Settings
 from hypothesis.utils.show import show
 from hypothesis.utils.size import clamp
 from hypothesis.internal.compat import hrange
+from hypothesis.internal.tracker import Tracker
 from hypothesis.searchstrategy.strategies import EFFECTIVELY_INFINITE, \
     BadData, SearchStrategy, MappedSearchStrategy, check_type, \
     infinitish, check_length, check_data_type, one_of_strategies
@@ -520,12 +521,12 @@ class SetStrategy(SearchStrategy):
         return self.list_strategy.draw_parameter(random)
 
     def convert_template(self, template):
-        seen = set()
+        seen = Tracker()
         deduped = []
         for x in template:
-            if x not in seen:
-                seen.add(x)
-                deduped.append(x)
+            if seen.track(x) > 1:
+                continue
+            deduped.append(x)
             if self.max_size is not None:
                 if len(deduped) >= self.max_size:
                     break
@@ -550,7 +551,11 @@ class SetStrategy(SearchStrategy):
             yield self.convert_simplifier(simplify)
 
     def to_basic(self, value):
-        result = self.list_strategy.to_basic(value)
+        t = Tracker()
+        result = []
+        for b in self.list_strategy.to_basic(value):
+            if t.track(b) == 1:
+                result.append(b)
         result.sort()
         return result
 

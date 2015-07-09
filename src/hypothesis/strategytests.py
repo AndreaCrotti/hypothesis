@@ -19,6 +19,7 @@
 from __future__ import division, print_function, absolute_import, \
     unicode_literals
 
+import json
 import hashlib
 from random import Random
 from unittest import TestCase
@@ -268,6 +269,16 @@ def strategy_test_suite(
             self.assertTrue(is_basic(supposedly_basic), repr(supposedly_basic))
 
         @specifier_test
+        def test_can_from_basic_every_to_basic(self, value, rnd):
+            basic = strat.to_basic(value)
+            strat.from_basic(basic)
+
+        @specifier_test
+        def test_can_json_loses_no_precision(self, value, rnd):
+            basic = strat.to_basic(value)
+            assert basic == json.loads(json.dumps(basic))
+
+        @specifier_test
         def test_only_raises_bad_data_in_from_basic(self, value, rnd):
             basic = strat.to_basic(value)
 
@@ -279,6 +290,9 @@ def strategy_test_suite(
 
         @specifier_test
         def test_can_round_trip_through_the_database(self, template, rnd):
+            basic = strat.to_basic(template)
+            assert strat.to_basic(template) == basic
+            assert json.loads(json.dumps(basic)) == basic
             empty_db = ExampleDatabase(
                 backend=SQLiteBackend(':memory:'),
             )
