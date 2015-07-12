@@ -153,7 +153,7 @@ class ListStrategy(SearchStrategy):
     """
 
     Parameter = namedtuple(
-        'Parameter', ('child_parameter', 'average_length')
+        'Parameter', ('templates', 'transitions', 'average_length')
     )
 
     def __init__(
@@ -191,11 +191,26 @@ class ListStrategy(SearchStrategy):
         if self.element_strategy is None:
             return None
         else:
+            params = [
+                self.element_strategy.draw_parameter(random)
+                for _ in hrange(1 + dist.geometric(random, 0.5))
+            ]
+            n_templates = 1 + dist.geometric(
+                random, 1 / (1 + self.average_length))
+            templates = [
+                self.element_strategy.draw_template(
+                    random, random.choice(params))
+                for _ in hrange(n_templates)
+            ]
+            transitions = [[] for _ in hrange(n_templates)]
+            for tr in transitions:
+                for _ in hrange(1 + dist.geometric(random, 0.5)):
+                    tr.append(random.randint(0, len(templates) - 1))
             return self.Parameter(
+                templates=templates,
+                transitions=transitions,
                 average_length=random.expovariate(
-                    1.0 / self.average_length),
-                child_parameter=self.element_strategy.draw_parameter(random),
-            )
+                    1.0 / (1 + self.average_length)))
 
     def draw_template(self, random, pv):
         if self.element_strategy is None:
@@ -206,10 +221,10 @@ class ListStrategy(SearchStrategy):
             self.max_size,
         )
         result = []
-        for _ in hrange(length):
-            result.append(
-                self.element_strategy.draw_template(
-                    random, pv.child_parameter))
+        index = 0
+        while len(result) < length:
+            result.append(deepcopy(pv.templates[index]))
+            index = random.choice(pv.transitions[index])
         return tuple(result)
 
     def simplifiers(self, random, template):
