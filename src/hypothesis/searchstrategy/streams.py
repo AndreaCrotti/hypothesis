@@ -28,14 +28,28 @@ from hypothesis.searchstrategy.strategies import SearchStrategy, \
 
 class StreamTemplate(object):
 
-    def __init__(self, seed, parameter, generator, changed=0):
+    def __init__(
+        self, seed, parameter, templates_stream=None, values=None,
+    ):
         self.seed = seed
         self.parameter_seed = parameter
-        self.changed = changed
-        if isinstance(generator, Stream):
-            self.stream = generator
+
+        self.templates_stream = templates_stream
+        if values is None:
+            self.values = []
         else:
-            self.stream = Stream(generator)
+            self.values = list(values)
+        self.changed = len(self.values)
+
+        def gen():
+            i = 0
+            while True:
+                if i < len(self.values):
+                    yield self.values[i]
+                else:
+                    yield self.templates_stream[i]
+                i += 1
+        self.stream = Stream(gen())
 
     def __repr__(self):
         return 'StreamTemplate(%r, %r, (%s))' % (
@@ -63,10 +77,13 @@ class StreamTemplate(object):
         return hash(self.seed ^ self.parameter_seed)
 
     def with_value(self, i, value):
+        new_values = list(self.values)
+        while len(new_values) <= i:
+            new_values.append(self.templates_stream[len(new_values)])
+        new_values[i] = value
         return StreamTemplate(
             self.seed, self.parameter_seed,
-            self.stream.with_value(i, value),
-            max(i + 1, self.changed)
+            values=new_values, templates_stream=self.templates_stream
         )
 
     def __trackas__(self):
@@ -90,13 +107,14 @@ class StreamStrategy(SearchStrategy):
 
     def new_template(self, seed, parameter_seed):
         parameter = self.source_strategy.draw_parameter(Random(parameter_seed))
-
         random = Random(seed)
 
         def templates():
             while True:
                 yield self.source_strategy.draw_template(random, parameter)
-        return StreamTemplate(seed, parameter_seed, templates())
+
+        return StreamTemplate(
+            seed, parameter_seed, templates_stream=Stream(templates()))
 
     def simplifiers(self, random, template):
         for i in hrange(len(template.stream.fetched)):
