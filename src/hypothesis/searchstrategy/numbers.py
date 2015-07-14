@@ -352,7 +352,7 @@ class FloatStrategy(SearchStrategy):
             raise BadData(e.args[0])
 
     def reify(self, value):
-        return value
+        return float(value)
 
     def simplifiers(self, random, x):
         if x == 0.0:
@@ -438,6 +438,8 @@ class FloatStrategy(SearchStrategy):
                     break
                 yield y
 
+STANDARD_NAN = float('nan')
+
 
 class WrapperFloatStrategy(FloatStrategy):
 
@@ -452,8 +454,12 @@ class WrapperFloatStrategy(FloatStrategy):
         return self.sub_strategy.draw_parameter(random)
 
     def draw_template(self, random, pv):
-        return self.sub_strategy.reify(
+        template = self.sub_strategy.reify(
             self.sub_strategy.draw_template(random, pv))
+        if math.isnan(template):
+            return STANDARD_NAN
+        else:
+            return template
 
 
 class JustIntFloats(FloatStrategy):
