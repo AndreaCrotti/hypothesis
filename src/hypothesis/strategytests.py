@@ -228,8 +228,9 @@ def strategy_test_suite(
             t1 = strat.draw_and_produce(Random(i))
             t2 = strat.draw_and_produce(Random(i))
 
-            assert t1 == t2
-            assert hash(t1) == hash(t2)
+            if t1 is not t2:
+                assert t1 == t2
+                assert hash(t1) == hash(t2)
 
         @given(integers(), settings=settings)
         def test_templates_generated_from_same_random_are_equal_after_reify(
@@ -237,10 +238,11 @@ def strategy_test_suite(
         ):
             t1 = strat.draw_and_produce(Random(i))
             t2 = strat.draw_and_produce(Random(i))
-            strat.reify(t1)
-            strat.reify(t2)
-            assert t1 == t2
-            assert hash(t1) == hash(t2)
+            if t1 is not t2:
+                strat.reify(t1)
+                strat.reify(t2)
+                assert t1 == t2
+                assert hash(t1) == hash(t2)
 
         @given(randoms(), settings=settings)
         def test_will_handle_a_really_weird_failure(self, rnd):
