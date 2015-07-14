@@ -472,12 +472,32 @@ class UniqueListTemplate(object):
         self.template_seed = template_seed
         self.created_as_seed = False
         if size == 0:
-            self.values = []
+            self.values = ()
         elif values is None:
             self.values = None
             self.created_as_seed = True
         else:
-            self.values = list(values)
+            self.values = tuple(values)
+
+    def __eq__(self, other):
+        if not isinstance(other, UniqueListTemplate):
+            return False
+        if self.created_as_seed != other.created_as_seed:
+            return False
+        if self.created_as_seed:
+            return self.parameter_seed == other.parameter_seed and (
+                self.template_seed == other.template_seed
+            )
+        return self.values == other.values
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        if self.created_as_seed:
+            return hash(self.template_seed)
+        else:
+            return hash(self.values)
 
     def __trackas__(self):
         if self.created_as_seed:
