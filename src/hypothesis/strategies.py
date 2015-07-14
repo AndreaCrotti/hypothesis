@@ -25,7 +25,6 @@ from fractions import Fraction
 
 import hypothesis.specifiers as spec
 from hypothesis.errors import InvalidArgument
-from hypothesis.control import assume
 from hypothesis.settings import Settings
 from hypothesis.searchstrategy import SearchStrategy, strategy
 from hypothesis.internal.compat import hrange, text_type, binary_type, \
